@@ -6,8 +6,10 @@ import remarkGfm from 'remark-gfm';
 import {
   Bookmark,
   CalendarClock,
+  ChevronRight,
   HelpCircle,
   History,
+  Map,
   MessageSquare,
   Paperclip,
   PlusSquare,
@@ -176,20 +178,37 @@ const faqItems: FaqItem[] = [
 
 const helpCards = [
   {
-    title: '售后处理流程',
-    description: '报修前建议先准备设备型号、购买时间、故障现象和视频记录，提交后可加快排查。',
-    action: '我要提交故障描述',
+    title: '服务时间',
+    description: '查看人工客服在线时段',
+    action: '查看人工客服时段',
+    icon: CalendarClock,
+    tone: 'blue',
   },
   {
-    title: '耗材维护提醒',
-    description: '滤网、主刷、边刷、拖布是高频损耗件，建议按照清扫频率建立月度检查习惯。',
-    action: '查看耗材更换建议',
+    title: '保修提示',
+    description: '查询设备保修状态及政策',
+    action: '查看保修政策',
+    icon: ShieldCheck,
+    tone: 'green',
   },
   {
-    title: '地图与回充指导',
-    description: '地图混乱、漏扫和回充失败，大多和底座位置、障碍物摆放及多楼层建图方式有关。',
-    action: '查看回充排障清单',
+    title: '自助排查',
+    description: '常见故障现象及解决方法',
+    action: '查看自助排障清单',
+    icon: Search,
+    tone: 'violet',
   },
+];
+
+const helpConsumables = [
+  { label: '滤芯（建议更换）', status: 'warning' },
+  { label: '边刷（状态良好）', status: 'healthy' },
+];
+
+const mapGuideSteps = [
+  '确保基站位置未被移动，且前方有足够的空旷区域以便设备识别信号。',
+  '检查设备顶部的激光雷达传感器是否有灰尘遮挡，可用干净的软布轻轻擦拭。',
+  '如地图出现严重错乱，建议在 App 中删除当前地图，重新启动设备进行全屋建图。',
 ];
 
 function cloneMessages(messages: Message[]): Message[] {
@@ -471,6 +490,9 @@ export default function App() {
               <Bookmark size={20} />
               <span>常用问题</span>
             </button>
+          </nav>
+
+          <div className="lumina-sidebar__footer">
             <button
               type="button"
               className={`lumina-nav__item ${activeView === 'help' ? 'lumina-nav__item--active' : ''}`}
@@ -479,9 +501,6 @@ export default function App() {
               <HelpCircle size={20} />
               <span>帮助中心</span>
             </button>
-          </nav>
-
-          <div className="lumina-sidebar__footer">
             <button type="button" className="lumina-nav__item lumina-nav__item--footer">
               <Settings size={20} />
               <span>账号设置</span>
@@ -617,44 +636,100 @@ export default function App() {
                   <p>围绕售后、保养、报修和自助排障整理了常用操作入口。</p>
                 </div>
 
-                <div className="help-metrics">
-                  <div className="metric-card">
-                    <CalendarClock size={20} />
-                    <div>
-                      <strong>服务时间</strong>
-                      <span>09:00 - 21:00，支持售后咨询与报障指引</span>
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <ShieldCheck size={20} />
-                    <div>
-                      <strong>保修提示</strong>
-                      <span>提交设备 SN、购买凭证与故障视频，处理效率更高</span>
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <Search size={20} />
-                    <div>
-                      <strong>自助排障</strong>
-                      <span>先做回充、吸力和异响三项基础检查，能覆盖大多数问题</span>
-                    </div>
-                  </div>
-                </div>
-
                 <div className="help-grid">
-                  {helpCards.map((card) => (
-                    <article key={card.title} className="help-card">
-                      <h3>{card.title}</h3>
-                      <p>{card.description}</p>
+                  <div className="help-shortcuts">
+                    {helpCards.map((card) => {
+                      const Icon = card.icon;
+                      return (
+                        <button
+                          key={card.title}
+                          type="button"
+                          className={`help-shortcut help-shortcut--${card.tone}`}
+                          onClick={() => openPrompt(card.action)}
+                        >
+                          <div className="help-shortcut__icon">
+                            <Icon size={20} />
+                          </div>
+                          <div className="help-shortcut__body">
+                            <strong>{card.title}</strong>
+                            <span>{card.description}</span>
+                          </div>
+                          <ChevronRight size={18} className="help-shortcut__arrow" />
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="help-service-grid">
+                    <article className="help-feature-card">
+                      <div className="help-feature-card__title">
+                        <Sparkles size={20} />
+                        <h3>售后处理流程</h3>
+                      </div>
+                      <p>
+                        如果您的设备遇到无法通过自助排查解决的硬件故障或异常表现，请详细描述故障现象。我们将为您生成维修工单，并指派专业技术人员跟进处理。
+                      </p>
+                      <ul className="help-checklist">
+                        <li>准备好设备序列号（SN）</li>
+                        <li>提供故障发生时的照片或视频</li>
+                      </ul>
                       <button
                         type="button"
-                        className="ghost-action"
-                        onClick={() => openPrompt(card.action)}
+                        className="solid-action help-feature-card__cta"
+                        onClick={() => openPrompt('我要提交故障描述')}
                       >
-                        {card.action}
+                        我要提交故障描述
                       </button>
                     </article>
-                  ))}
+
+                    <article className="help-feature-card">
+                      <div className="help-feature-card__title">
+                        <Wrench size={20} />
+                        <h3>耗材维护提醒</h3>
+                      </div>
+                      <p>
+                        定期更换耗材是保证设备稳定运行和延长使用寿命的关键。系统会根据您的设备运行情况智能推算耗材寿命。
+                      </p>
+                      <div className="consumable-row">
+                        {helpConsumables.map((item) => (
+                          <div key={item.label} className="consumable-chip">
+                            <span className={`consumable-chip__dot consumable-chip__dot--${item.status}`} />
+                            <span>{item.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        className="ghost-action help-feature-card__outline"
+                        onClick={() => openPrompt('查看耗材更换建议')}
+                      >
+                        查看耗材更换建议
+                      </button>
+                    </article>
+                  </div>
+
+                  <article className="help-guide-card">
+                    <div className="help-guide-card__content">
+                      <div className="help-feature-card__title">
+                        <Map size={20} />
+                        <h3>地图与回充指导</h3>
+                      </div>
+                      <p>
+                        遇到设备迷失方向、无法返回基站或地图重叠等问题时，请优先检查以下几点：
+                      </p>
+                      <ol className="help-steps">
+                        {mapGuideSteps.map((step) => (
+                          <li key={step}>{step}</li>
+                        ))}
+                      </ol>
+                    </div>
+                    <div className="help-guide-card__visual">
+                      <div className="help-guide-card__placeholder">
+                        <Paperclip size={42} />
+                        <span>导航示意图</span>
+                      </div>
+                    </div>
+                  </article>
                 </div>
               </section>
             </div>
