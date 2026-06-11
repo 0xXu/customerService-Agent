@@ -1,5 +1,8 @@
 from abc import ABC, abstractmethod
+import hashlib
+import math
 import os
+import re
 from typing import Optional
 
 from langchain_core.embeddings import Embeddings
@@ -63,10 +66,41 @@ class ChatModelFactory(BaseModelFactory):
         raise ValueError(f"不支持的 chat_provider: {provider}，可选值为 openai、gemini、deepseek")
 
 
+class LocalHashEmbeddings(Embeddings):
+    """Dependency-free embeddings for a small, persistent local knowledge base."""
+
+    def __init__(self, dimensions: int = 384):
+        self.dimensions = dimensions
+
+    def _embed(self, text: str) -> list[float]:
+        vector = [0.0] * self.dimensions
+        normalized = text.lower()
+        tokens = re.findall(r"[a-z0-9]+|[\u4e00-\u9fff]", normalized)
+        tokens.extend(normalized[index:index + 2] for index in range(len(normalized) - 1))
+
+        for token in tokens:
+            digest = hashlib.blake2b(token.encode("utf-8"), digest_size=8).digest()
+            value = int.from_bytes(digest, "big")
+            index = value % self.dimensions
+            vector[index] += 1.0 if value & 1 else -1.0
+
+        norm = math.sqrt(sum(value * value for value in vector))
+        return [value / norm for value in vector] if norm else vector
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [self._embed(text) for text in texts]
+
+    def embed_query(self, text: str) -> list[float]:
+        return self._embed(text)
+
+
 class EmbeddingsFactory(BaseModelFactory):
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
-        provider = _get_provider("embedding_provider", "openai")
+        provider = _get_provider("embedding_provider", "local")
         model_name = rag_conf["embedding_model_name"]
+
+        if provider == "local":
+            return LocalHashEmbeddings()
 
         if provider == "openai":
             return OpenAIEmbeddings(
@@ -84,7 +118,7 @@ class EmbeddingsFactory(BaseModelFactory):
         if provider == "deepseek":
             raise ValueError("DeepSeek 当前不提供此项目可用的 Embedding 模型，请将 embedding_provider 设置为 openai 或 gemini")
 
-        raise ValueError(f"不支持的 embedding_provider: {provider}，可选值为 openai、gemini")
+        raise ValueError(f"不支持的 embedding_provider: {provider}，可选值为 local、openai、gemini")
 
 
 chat_model = ChatModelFactory().generator()
