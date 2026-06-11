@@ -1,0 +1,45 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: customerservice-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - customerservice-chroma:/app/chroma_db
+      - customerservice-runtime:/app/runtime
+    healthcheck:
+      test:
+        - CMD
+        - .venv/bin/python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    networks:
+      - gateway
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: customerservice-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - gateway
+
+volumes:
+  customerservice-chroma:
+  customerservice-runtime:
+
+networks:
+  gateway:
+    external: true
+    name: gateway-net
