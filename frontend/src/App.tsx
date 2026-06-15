@@ -1085,61 +1085,71 @@ export default function App() {
           </AnimatePresence>
         </main>
 
-        <div className="composer-shell">
-          <div className="composer-inner">
-            <div className="quick-replies">
-              {quickReplies.map(({ icon: Icon, label }) => (
-                <button
-                  key={label}
-                  type="button"
-                  className="quick-reply"
-                  onClick={() => openPrompt(label)}
-                >
-                  <Icon size={16} />
-                  <span>{label}</span>
-                </button>
-              ))}
-            </div>
+        <AnimatePresence>
+          {activeView === 'chat' && (
+            <motion.div
+              className="composer-shell"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 12 }}
+              transition={{ duration: 0.2 }}
+            >
+              <div className="composer-inner">
+                <div className="quick-replies">
+                  {quickReplies.map(({ icon: Icon, label }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className="quick-reply"
+                      onClick={() => openPrompt(label)}
+                    >
+                      <Icon size={16} />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
 
-            <form className="composer" onSubmit={handleSubmit}>
-              <button
-                type="button"
-                className="composer__attach"
-                onClick={() => showNotice('图片与文件识别能力正在接入中')}
-                aria-label="添加附件"
-              >
-                <Paperclip size={22} />
-              </button>
+                <form className="composer" onSubmit={handleSubmit}>
+                  <button
+                    type="button"
+                    className="composer__attach"
+                    onClick={() => showNotice('图片与文件识别能力正在接入中')}
+                    aria-label="添加附件"
+                  >
+                    <Paperclip size={22} />
+                  </button>
 
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    void handleSubmit();
-                  }
-                }}
-                placeholder="请输入您的问题..."
-                className="composer__input"
-              />
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        void handleSubmit();
+                      }
+                    }}
+                    placeholder="请输入您的问题..."
+                    className="composer__input"
+                  />
 
-              <button
-                type="submit"
-                disabled={!input.trim() || isLoading}
-                className="composer__send"
-              >
-                <SendHorizontal size={20} />
-              </button>
-            </form>
+                  <button
+                    type="submit"
+                    disabled={!input.trim() || isLoading}
+                    className="composer__send"
+                  >
+                    <SendHorizontal size={20} />
+                  </button>
+                </form>
 
-            <div className="composer-note">
-              {SERVICE_NAME} 可能出现误判，涉及售后与订单信息时请以人工客服确认为准。
-            </div>
-          </div>
-        </div>
+                <div className="composer-note">
+                  {SERVICE_NAME} 可能出现误判，涉及售后与订单信息时请以人工客服确认为准。
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <nav className="mobile-nav" aria-label="移动端导航">
           {[
