@@ -6,9 +6,11 @@ import remarkGfm from 'remark-gfm';
 import {
   Bookmark,
   CalendarClock,
+  CheckCircle2,
   ChevronRight,
   HelpCircle,
   History,
+  LoaderCircle,
   Map,
   MessageSquare,
   Paperclip,
@@ -35,6 +37,12 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   isStreaming?: boolean;
+  toolActivity?: {
+    id: string;
+    name: string;
+    status: 'running' | 'completed';
+    startedAt: number;
+  };
 }
 
 interface ConversationSession {
@@ -164,6 +172,61 @@ function AssistantAvatar() {
   );
 }
 
+function ToolActivity({
+  activity,
+}: {
+  activity: NonNullable<Message['toolActivity']>;
+}) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const updateElapsed = () => {
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - activity.startedAt) / 1000)));
+    };
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 500);
+    return () => window.clearInterval(timer);
+  }, [activity.startedAt]);
+
+  const labels: Record<string, string> = {
+    search_knowledge: '知识库检索',
+    get_weather: '天气查询',
+    get_current_user_id: '用户身份读取',
+    get_current_month: '当前月份读取',
+    fetch_usage_record: '设备使用记录查询',
+  };
+  const label = labels[activity.name] ?? '外部工具';
+  const isRunning = activity.status === 'running';
+
+  return (
+    <div className="tool-state" aria-live="polite">
+      <span className={`tool-state__icon ${!isRunning ? 'tool-state__icon--completed' : ''}`}>
+        {isRunning ? <LoaderCircle size={20} /> : <CheckCircle2 size={20} />}
+        {!isRunning && <span className="tool-state__orbit" />}
+      </span>
+      <span className="tool-state__content">
+        <span className="tool-state__head">
+          <span className="tool-state__eyebrow">
+            {isRunning ? '正在调用工具' : '工具调用完成'}
+          </span>
+          <span className="tool-state__elapsed">已处理 {elapsedSeconds} 秒</span>
+        </span>
+        <span className="tool-state__label">
+          {isRunning ? `正在调用${label}` : `${label}完成，正在生成答案`}
+        </span>
+        <span className="tool-state__progress" aria-hidden="true">
+          <span className="tool-state__progress-bar" />
+        </span>
+        <span className="tool-state__steps" aria-hidden="true">
+          <span className={isRunning ? 'is-active' : 'is-done'}>分析问题</span>
+          <span className={isRunning ? 'is-active' : 'is-done'}>检索资料</span>
+          <span className={!isRunning ? 'is-active' : ''}>生成答案</span>
+        </span>
+      </span>
+    </div>
+  );
+}
+
 function ChatMessages({ messages }: { messages: Message[] }) {
   return (
     <>
@@ -187,14 +250,18 @@ function ChatMessages({ messages }: { messages: Message[] }) {
                   }`}
                 >
                   {message.isStreaming && !message.content.trim() ? (
-                    <div className="thinking-state" aria-label="思考中">
-                      <span className="thinking-state__label">思考中</span>
-                      <span className="thinking-state__dots">
-                        <span className="thinking-state__dot" />
-                        <span className="thinking-state__dot" />
-                        <span className="thinking-state__dot" />
-                      </span>
-                    </div>
+                    message.toolActivity ? (
+                      <ToolActivity activity={message.toolActivity} />
+                    ) : (
+                      <div className="thinking-state" aria-label="正在理解问题">
+                        <span className="thinking-state__label">正在理解问题</span>
+                        <span className="thinking-state__dots">
+                          <span className="thinking-state__dot" />
+                          <span className="thinking-state__dot" />
+                          <span className="thinking-state__dot" />
+                        </span>
+                      </div>
+                    )
                   ) : (
                     <>
                       <div className="assistant-markdown">
@@ -364,9 +431,57 @@ export default function App() {
               setMessages((prev) =>
                 prev.map((message) =>
                   message.id === assistantMessageId
-                    ? { ...message, content: message.content + (data.delta ?? '') }
+                    ? {
+                        ...message,
+                        content: message.content + (data.delta ?? ''),
+                        toolActivity: undefined,
+                      }
                     : message,
                 ),
+              );
+              continue;
+            }
+
+            if (data.type === 'TOOL_CALL_START') {
+              setMessages((prev) =>
+                prev.map((message) =>
+                  message.id === assistantMessageId
+                    ? {
+                        ...message,
+                        toolActivity: {
+                          id: data.toolCallId,
+                          name: data.toolCallName,
+                          status: 'running',
+                          startedAt: Date.now(),
+                        },
+                      }
+                    : message,
+                ),
+              );
+              continue;
+            }
+
+            if (data.type === 'TOOL_CALL_RESULT') {
+              setMessages((prev) =>
+                prev.map((message) => {
+                  const activity = message.toolActivity;
+                  if (
+                    message.id !== assistantMessageId ||
+                    !activity ||
+                    activity.id !== data.toolCallId
+                  ) {
+                    return message;
+                  }
+                  return {
+                    ...message,
+                      toolActivity: {
+                        id: activity.id,
+                        name: activity.name,
+                        status: 'completed',
+                        startedAt: activity.startedAt,
+                      },
+                  };
+                }),
               );
               continue;
             }

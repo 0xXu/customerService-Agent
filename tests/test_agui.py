@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 from ag_ui.core.types import RunAgentInput, UserMessage
 from pydantic_ai import Agent
+from pydantic_ai.messages import ToolReturnPart
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
 from agent.agui import latest_user_text, stream_agui_run
@@ -65,4 +67,70 @@ async def test_stream_emits_valid_agui_lifecycle(tmp_path: Path):
     stored = await database.list_messages("thread-1")
     assert [message["role"] for message in stored] == ["user", "assistant"]
     assert stored[-1]["content"] == "请先关闭电源，再清理主刷。"
+    await database.close()
+
+
+@pytest.mark.asyncio
+async def test_stream_completes_tool_call_after_preamble(tmp_path: Path):
+    settings = Settings(
+        openai_api_key="test",
+        database_url=f"sqlite+aiosqlite:///{tmp_path / 'tool-test.db'}",
+    )
+    database = Database(settings)
+    await database.initialize()
+
+    async def stream_function(messages, info: AgentInfo):
+        tool_returned = any(
+            isinstance(part, ToolReturnPart)
+            for message in messages
+            for part in message.parts
+        )
+        if tool_returned:
+            yield "最终选购建议"
+            return
+        yield {
+            0: DeltaToolCall(
+                name="search_knowledge",
+                json_args='{"query":"扫拖一体机选购"}',
+                tool_call_id="search-1",
+            )
+        }
+
+    agent = Agent(FunctionModel(stream_function=stream_function))
+
+    @agent.tool_plain
+    async def search_knowledge(query: str) -> str:
+        return f"{query}：优先关注导航、基站和防缠绕能力。"
+
+    deps = CustomerAgentDeps(
+        settings=settings,
+        knowledge=object(),  # type: ignore[arg-type]
+        user_id="1001",
+    )
+    events = [
+        decode_event(event)
+        async for event in stream_agui_run(
+            request=make_request("帮我选购扫拖一体机"),
+            agent=agent,  # type: ignore[arg-type]
+            deps=deps,
+            database=database,
+        )
+    ]
+
+    content = "".join(
+        event.get("delta", "")
+        for event in events
+        if event["type"] == "TEXT_MESSAGE_CONTENT"
+    )
+    assert content == "最终选购建议"
+    assert "我先检索资料" not in content
+    event_types = [event["type"] for event in events]
+    assert "TOOL_CALL_START" in event_types
+    assert "TOOL_CALL_RESULT" in event_types
+    assert event_types.index("TOOL_CALL_START") < event_types.index(
+        "TEXT_MESSAGE_CONTENT"
+    )
+
+    stored = await database.list_messages("thread-1")
+    assert stored[-1]["content"] == "最终选购建议"
     await database.close()

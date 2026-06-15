@@ -10,11 +10,22 @@ from ag_ui.core.events import (
     TextMessageContentEvent,
     TextMessageEndEvent,
     TextMessageStartEvent,
+    ToolCallArgsEvent,
+    ToolCallEndEvent,
+    ToolCallResultEvent,
+    ToolCallStartEvent,
 )
 from ag_ui.core.types import RunAgentInput
 from ag_ui.encoder import EventEncoder
-from pydantic_ai import Agent
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai import Agent, AgentRunResultEvent
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
 
 from agent.customer_agent import CustomerAgentDeps
 from core.database import Database
@@ -78,23 +89,57 @@ async def stream_agui_run(
     yield encoder.encode(
         TextMessageStartEvent(messageId=assistant_message_id, role="assistant")
     )
-    chunks: list[str] = []
     try:
-        async with agent.run_stream(
+        final_output = ""
+        async with agent.run_stream_events(
             prompt,
             deps=deps,
             message_history=message_history,
             conversation_id=request.thread_id,
-        ) as result:
-            async for delta in result.stream_text(delta=True, debounce_by=0.02):
-                chunks.append(delta)
-                yield encoder.encode(
-                    TextMessageContentEvent(
-                        messageId=assistant_message_id, delta=delta
+        ) as events:
+            async for event in events:
+                if isinstance(event, FunctionToolCallEvent):
+                    tool_call = event.part
+                    yield encoder.encode(
+                        ToolCallStartEvent(
+                            toolCallId=tool_call.tool_call_id,
+                            toolCallName=tool_call.tool_name,
+                            parentMessageId=assistant_message_id,
+                        )
                     )
-                )
+                    yield encoder.encode(
+                        ToolCallArgsEvent(
+                            toolCallId=tool_call.tool_call_id,
+                            delta=tool_call.args_as_json_str(),
+                        )
+                    )
+                    yield encoder.encode(
+                        ToolCallEndEvent(toolCallId=tool_call.tool_call_id)
+                    )
+                    continue
 
-        content = "".join(chunks)
+                if isinstance(event, FunctionToolResultEvent):
+                    yield encoder.encode(
+                        ToolCallResultEvent(
+                            messageId=str(uuid4()),
+                            toolCallId=event.tool_call_id,
+                            content="completed",
+                            role="tool",
+                        )
+                    )
+                    continue
+
+                if isinstance(event, AgentRunResultEvent):
+                    final_output = str(event.result.output)
+
+        content = final_output
+        if content:
+            yield encoder.encode(
+                TextMessageContentEvent(
+                    messageId=assistant_message_id,
+                    delta=content,
+                )
+            )
         await database.append_message(
             conversation_id=request.thread_id,
             message_id=assistant_message_id,
