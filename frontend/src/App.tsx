@@ -8,6 +8,7 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronRight,
+  Clock3,
   HelpCircle,
   History,
   LoaderCircle,
@@ -22,7 +23,9 @@ import {
   ShieldCheck,
   ShoppingCart,
   Sparkles,
+  UserRound,
   Wrench,
+  X,
 } from 'lucide-react';
 import './App.css';
 
@@ -172,6 +175,39 @@ function AssistantAvatar() {
   );
 }
 
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  action,
+  onAction,
+}: {
+  icon: React.ComponentType<{ size?: number }>;
+  title: string;
+  description: string;
+  action?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <motion.div
+      className="empty-state"
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+    >
+      <span className="empty-state__icon">
+        <Icon size={26} />
+      </span>
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {action && onAction && (
+        <button type="button" className="solid-action" onClick={onAction}>
+          {action}
+        </button>
+      )}
+    </motion.div>
+  );
+}
+
 function ToolActivity({
   activity,
 }: {
@@ -293,7 +329,11 @@ export default function App() {
   const [sessions, setSessions] = useState<ConversationSession[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [faqCategory, setFaqCategory] = useState<string>('全部');
+  const [faqQuery, setFaqQuery] = useState('');
+  const [sessionQuery, setSessionQuery] = useState('');
+  const [notice, setNotice] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (activeView !== 'chat') return;
@@ -349,14 +389,37 @@ export default function App() {
     void loadConversations();
   }, []);
 
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(''), 2600);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 140)}px`;
+  }, [input]);
+
   const selectedSession =
     sessions.find((session) => session.id === selectedSessionId) ?? sessions[0] ?? null;
+  const visibleSessions = sessions.filter((session) => {
+    const query = sessionQuery.trim().toLowerCase();
+    if (!query) return true;
+    return `${session.title} ${session.summary}`.toLowerCase().includes(query);
+  });
 
   const faqCategories = ['全部', ...new Set(faqItems.map((item) => item.category))];
   const filteredFaqs =
-    faqCategory === '全部'
+    (faqCategory === '全部'
       ? faqItems
-      : faqItems.filter((item) => item.category === faqCategory);
+      : faqItems.filter((item) => item.category === faqCategory)
+    ).filter((item) => {
+      const query = faqQuery.trim().toLowerCase();
+      if (!query) return true;
+      return `${item.question} ${item.answer} ${item.category}`.toLowerCase().includes(query);
+    });
 
   const sendPrompt = async (prompt: string) => {
     const userMessage: Message = {
@@ -577,7 +640,10 @@ export default function App() {
   const openPrompt = (prompt: string) => {
     setInput(prompt);
     setActiveView('chat');
+    window.setTimeout(() => textareaRef.current?.focus(), 120);
   };
+
+  const showNotice = (message: string) => setNotice(message);
 
   const topbarTitle =
     activeView === 'recent'
@@ -649,36 +715,100 @@ export default function App() {
           </div>
 
           <div className="topbar__actions">
-            <button type="button" className="topbar__human">
+            <button
+              type="button"
+              className="topbar__human"
+              onClick={() => openPrompt('我需要转接人工客服')}
+            >
+              <UserRound size={17} />
               转人工服务
             </button>
             <button type="button" className="topbar__icon" onClick={() => setActiveView('recent')}>
               <History size={22} />
             </button>
-            <button type="button" className="topbar__icon" onClick={() => setActiveView('help')}>
+            <button
+              type="button"
+              className="topbar__icon"
+              onClick={() => showNotice('账号设置功能正在接入中')}
+              aria-label="账号设置"
+            >
               <Settings size={22} />
             </button>
           </div>
         </header>
 
         <main className="chat-scroll">
+          <AnimatePresence mode="wait" initial={false}>
           {activeView === 'chat' && (
-            <div className="chat-column">
+            <motion.div
+              key="chat"
+              className="chat-column"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.22 }}
+            >
+              {messages.length === 1 && (
+                <section className="welcome-card">
+                  <div className="welcome-card__glow" />
+                  <div className="welcome-card__content">
+                    <span className="welcome-card__badge">
+                      <Sparkles size={15} />
+                      AI 智能服务
+                    </span>
+                    <h1>今天需要解决什么问题？</h1>
+                    <p>描述设备现象、错误提示或使用场景，我会检索知识库并给出可执行步骤。</p>
+                    <div className="welcome-card__capabilities">
+                      <span><RotateCcw size={16} />故障排查</span>
+                      <span><ShoppingCart size={16} />产品选购</span>
+                      <span><Wrench size={16} />维护保养</span>
+                    </div>
+                  </div>
+                  <div className="welcome-card__visual">
+                    <span className="welcome-orbit welcome-orbit--one" />
+                    <span className="welcome-orbit welcome-orbit--two" />
+                    <Sparkles size={40} />
+                  </div>
+                </section>
+              )}
               <ChatMessages messages={messages} />
               <div ref={messagesEndRef} />
-            </div>
+            </motion.div>
           )}
 
           {activeView === 'recent' && (
-            <div className="module-page module-page--recent">
+            <motion.div
+              key="recent"
+              className="module-page module-page--recent"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+            >
               <section className="panel recent-list">
                 <div className="panel__header">
-                  <h2>最近会话</h2>
+                  <div className="panel__title-row">
+                    <h2>最近会话</h2>
+                    <span className="panel__count">{sessions.length}</span>
+                  </div>
                   <p>查看近期咨询记录，并可一键恢复到对话窗口继续追问。</p>
                 </div>
 
+                <label className="module-search">
+                  <Search size={17} />
+                  <input
+                    value={sessionQuery}
+                    onChange={(event) => setSessionQuery(event.target.value)}
+                    placeholder="搜索会话"
+                  />
+                  {sessionQuery && (
+                    <button type="button" onClick={() => setSessionQuery('')} aria-label="清空搜索">
+                      <X size={15} />
+                    </button>
+                  )}
+                </label>
+
                 <div className="recent-list__items">
-                  {sessions.map((session) => (
+                  {visibleSessions.map((session) => (
                     <button
                       key={session.id}
                       type="button"
@@ -693,48 +823,104 @@ export default function App() {
                       <div className="recent-card__summary">{session.summary}</div>
                     </button>
                   ))}
+                  {!visibleSessions.length && (
+                    <EmptyState
+                      icon={MessageSquare}
+                      title={sessions.length ? '没有匹配的会话' : '暂无历史会话'}
+                      description={sessions.length ? '换个关键词试试。' : '完成一次咨询后，会话会自动保存到这里。'}
+                      action={!sessions.length ? '开始新对话' : undefined}
+                      onAction={!sessions.length ? handleNewChat : undefined}
+                    />
+                  )}
                 </div>
               </section>
 
               {selectedSession ? (
-                <section className="panel recent-preview">
-                  <div className="panel__header">
-                    <h2>{selectedSession.title}</h2>
-                    <p>{selectedSession.summary}</p>
+                <motion.section
+                  key={selectedSession.id}
+                  className="panel recent-preview"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <div className="recent-preview__toolbar">
+                    <div className="recent-preview__identity">
+                      <span className="recent-preview__eyebrow">
+                        <History size={14} />
+                        会话预览
+                      </span>
+                      <h2>{selectedSession.title}</h2>
+                      <div className="recent-preview__meta">
+                        <span>{selectedSession.messages.length} 条消息</span>
+                        <span>{selectedSession.updatedAt}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="solid-action recent-preview__restore"
+                      onClick={() => restoreConversation(selectedSession)}
+                    >
+                      <MessageSquare size={17} />
+                      恢复对话
+                    </button>
                   </div>
 
                   <div className="recent-preview__messages">
                     <ChatMessages messages={selectedSession.messages} />
                   </div>
 
-                  <div className="panel__actions">
+                  <div className="recent-preview__mobile-action">
                     <button
                       type="button"
-                      className="solid-action"
+                      className="solid-action recent-preview__restore"
                       onClick={() => restoreConversation(selectedSession)}
                     >
-                      恢复到当前对话
+                      <MessageSquare size={17} />
+                      恢复并继续对话
                     </button>
                   </div>
-                </section>
+                </motion.section>
               ) : (
                 <section className="panel recent-preview">
-                  <div className="panel__header">
-                    <h2>暂无历史会话</h2>
-                    <p>完成一次咨询后，会话会自动保存到这里。</p>
-                  </div>
+                  <EmptyState
+                    icon={History}
+                    title="选择一条会话"
+                    description="会话内容会显示在这里，您可以随时恢复继续咨询。"
+                  />
                 </section>
               )}
-            </div>
+            </motion.div>
           )}
 
           {activeView === 'faq' && (
-            <div className="module-page">
+            <motion.div
+              key="faq"
+              className="module-page"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+            >
               <section className="panel faq-overview">
                 <div className="panel__header">
-                  <h2>常用问题</h2>
+                  <div className="panel__title-row">
+                    <h2>常用问题</h2>
+                    <span className="panel__count">{filteredFaqs.length}</span>
+                  </div>
                   <p>把高频咨询按场景分类，支持直接带入聊天继续问。</p>
                 </div>
+
+                <label className="module-search module-search--wide">
+                  <Search size={18} />
+                  <input
+                    value={faqQuery}
+                    onChange={(event) => setFaqQuery(event.target.value)}
+                    placeholder="搜索故障、耗材、回充或选购问题"
+                  />
+                  {faqQuery && (
+                    <button type="button" onClick={() => setFaqQuery('')} aria-label="清空搜索">
+                      <X size={15} />
+                    </button>
+                  )}
+                </label>
 
                 <div className="faq-filters">
                   {faqCategories.map((category) => (
@@ -749,9 +935,15 @@ export default function App() {
                   ))}
                 </div>
 
-                <div className="faq-grid">
+                <motion.div layout className="faq-grid">
                   {filteredFaqs.map((item) => (
-                    <article key={item.id} className="faq-card">
+                    <motion.article
+                      layout
+                      key={item.id}
+                      className="faq-card"
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                    >
                       <div className="faq-card__meta">{item.category}</div>
                       <h3>{item.question}</h3>
                       <p>{item.answer}</p>
@@ -762,15 +954,30 @@ export default function App() {
                       >
                         继续咨询这个问题
                       </button>
-                    </article>
+                    </motion.article>
                   ))}
-                </div>
+                </motion.div>
+                {!filteredFaqs.length && (
+                  <EmptyState
+                    icon={Search}
+                    title="没有找到相关问题"
+                    description="可以清空搜索，或直接在聊天中描述您的具体情况。"
+                    action="转到聊天咨询"
+                    onAction={() => openPrompt(faqQuery)}
+                  />
+                )}
               </section>
-            </div>
+            </motion.div>
           )}
 
           {activeView === 'help' && (
-            <div className="module-page">
+            <motion.div
+              key="help"
+              className="module-page"
+              initial={{ opacity: 0, x: 12 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -12 }}
+            >
               <section className="panel help-hero">
                 <div className="panel__header">
                   <h2>帮助中心</h2>
@@ -873,8 +1080,9 @@ export default function App() {
                   </article>
                 </div>
               </section>
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
         </main>
 
         <div className="composer-shell">
@@ -894,11 +1102,17 @@ export default function App() {
             </div>
 
             <form className="composer" onSubmit={handleSubmit}>
-              <button type="button" className="composer__attach">
+              <button
+                type="button"
+                className="composer__attach"
+                onClick={() => showNotice('图片与文件识别能力正在接入中')}
+                aria-label="添加附件"
+              >
                 <Paperclip size={22} />
               </button>
 
               <textarea
+                ref={textareaRef}
                 rows={1}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
@@ -926,7 +1140,39 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        <nav className="mobile-nav" aria-label="移动端导航">
+          {[
+            { view: 'chat' as const, label: '对话', icon: MessageSquare },
+            { view: 'recent' as const, label: '最近', icon: History },
+            { view: 'faq' as const, label: '问题', icon: Bookmark },
+            { view: 'help' as const, label: '帮助', icon: HelpCircle },
+          ].map(({ view, label, icon: Icon }) => (
+            <button
+              key={view}
+              type="button"
+              className={activeView === view ? 'mobile-nav__item mobile-nav__item--active' : 'mobile-nav__item'}
+              onClick={() => setActiveView(view)}
+            >
+              <Icon size={19} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
       </section>
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            className="app-toast"
+            initial={{ opacity: 0, y: 14, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+          >
+            <Clock3 size={17} />
+            <span>{notice}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
