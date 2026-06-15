@@ -1,45 +1,113 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: customer_service
+      POSTGRES_PASSWORD: customer_service
+      POSTGRES_DB: customer_service
+    volumes:
+      - customerservice-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U customer_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.0
+    restart: unless-stopped
+    volumes:
+      - customerservice-qdrant:/qdrant/storage
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: customer_service
+      POSTGRES_PWD: customer_service
+      POSTGRES_SEEDS: postgres
+    networks:
+      - internal
+
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    container_name: customerservice-backend
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      temporal:
+        condition: service_started
     env_file:
       - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://customer_service:customer_service@postgres:5432/customer_service
+      QDRANT_URL: http://qdrant:6333
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_ENABLED: "true"
+      HF_HOME: /app/runtime/huggingface
     volumes:
-      - customerservice-chroma:/app/chroma_db
       - customerservice-runtime:/app/runtime
     healthcheck:
       test:
-        - CMD
-        - .venv/bin/python
-        - -c
-        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"
+        [
+          "CMD",
+          ".venv/bin/python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+        ]
       interval: 20s
       timeout: 5s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 120s
     networks:
-      - gateway
+      internal:
+      gateway:
+        aliases:
+          - customerservice-backend
 
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-    container_name: customerservice-frontend
     restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
     networks:
-      - gateway
+      gateway:
+        aliases:
+          - customerservice-frontend
 
 volumes:
-  customerservice-chroma:
+  customerservice-postgres:
+  customerservice-qdrant:
   customerservice-runtime:
 
 networks:
+  internal:
   gateway:
     external: true
     name: gateway-net

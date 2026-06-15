@@ -68,69 +68,6 @@ const quickReplies = [
   { icon: ShoppingCart, label: '帮我选购扫拖一体机' },
 ];
 
-const recentSessions: ConversationSession[] = [
-  {
-    id: 'session-recharge',
-    title: '自动回充失败排查',
-    updatedAt: '今天 14:20',
-    summary: '回充座位置、充电极片清洁、地图重建',
-    tag: '故障排查',
-    messages: [
-      {
-        id: 'sr-1',
-        role: 'user',
-        content: '机器人总是回充失败，怎么排查？',
-      },
-      {
-        id: 'sr-2',
-        role: 'assistant',
-        content:
-          '建议先确认充电座两侧留有足够空间，清洁机器人与底座的充电金属触点，再检查回充路径上是否有地毯边缘或障碍物。如果近期搬动过底座，建议重建地图后再尝试回充。',
-      },
-    ],
-  },
-  {
-    id: 'session-suction',
-    title: '吸力下降处理建议',
-    updatedAt: '昨天 19:48',
-    summary: '尘盒、滤网、主刷、边刷与风道清理',
-    tag: '维护保养',
-    messages: [
-      {
-        id: 'ss-1',
-        role: 'user',
-        content: '吸力变弱以后应该先检查哪里？',
-      },
-      {
-        id: 'ss-2',
-        role: 'assistant',
-        content:
-          '先检查尘盒是否已满、滤网是否堵塞，再查看主刷与边刷是否缠绕毛发。如果风道或吸入口被纸屑堵住，也会导致吸力明显下降，清理后通常会恢复正常。',
-      },
-    ],
-  },
-  {
-    id: 'session-buying',
-    title: '扫拖一体机选购',
-    updatedAt: '周一 10:12',
-    summary: '户型面积、宠物家庭、拖布提升与避障能力',
-    tag: '售前咨询',
-    messages: [
-      {
-        id: 'sb-1',
-        role: 'user',
-        content: '90 平米、有宠物，适合买哪类扫拖一体机？',
-      },
-      {
-        id: 'sb-2',
-        role: 'assistant',
-        content:
-          '建议优先选择具备强吸力、滚刷防缠绕、自动集尘和拖布自清洁能力的机型。如果家里杂物较多，还要关注避障能力和边角清扫表现，这类配置对宠物家庭更实用。',
-      },
-    ],
-  },
-];
-
 const faqItems: FaqItem[] = [
   {
     id: 'faq-1',
@@ -285,8 +222,9 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>(createInitialMessages());
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [sessions, setSessions] = useState<ConversationSession[]>(recentSessions);
-  const [selectedSessionId, setSelectedSessionId] = useState<string>(recentSessions[0].id);
+  const [threadId, setThreadId] = useState<string>(() => crypto.randomUUID());
+  const [sessions, setSessions] = useState<ConversationSession[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [faqCategory, setFaqCategory] = useState<string>('全部');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -295,8 +233,57 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages, activeView]);
 
+  useEffect(() => {
+    const loadConversations = async () => {
+      try {
+        const response = await fetch('/api/conversations', {
+          headers: { 'X-User-ID': '1001' },
+        });
+        if (!response.ok) return;
+
+        const conversations: Array<{
+          id: string;
+          title: string;
+          updated_at: string;
+        }> = await response.json();
+        if (!conversations.length) return;
+
+        const persistedSessions = await Promise.all(
+          conversations.map(async (conversation) => {
+            const messagesResponse = await fetch(
+              `/api/conversations/${conversation.id}/messages`,
+            );
+            const storedMessages: Array<Message & { created_at: string }> =
+              messagesResponse.ok ? await messagesResponse.json() : [];
+            const assistantSummary =
+              [...storedMessages]
+                .reverse()
+                .find((message) => message.role === 'assistant')
+                ?.content.slice(0, 80) ?? '已保存的客服会话';
+
+            return {
+              id: conversation.id,
+              title: conversation.title,
+              updatedAt: new Date(conversation.updated_at).toLocaleString('zh-CN'),
+              summary: assistantSummary,
+              tag: '历史会话',
+              messages: cloneMessages(storedMessages),
+            };
+          }),
+        );
+
+        setSessions(persistedSessions);
+        setSelectedSessionId(persistedSessions[0].id);
+      } catch (error) {
+        console.error('Failed to load conversations:', error);
+      }
+    };
+
+    void loadConversations();
+  }, []);
+
   const selectedSession =
-    sessions.find((session) => session.id === selectedSessionId) ?? sessions[0];
+    sessions.find((session) => session.id === selectedSessionId) ?? sessions[0] ?? null;
 
   const faqCategories = ['全部', ...new Set(faqItems.map((item) => item.category))];
   const filteredFaqs =
@@ -320,12 +307,30 @@ export default function App() {
     setInput('');
     setIsLoading(true);
     setActiveView('chat');
+    let assistantContent = '';
 
     try {
-      const response = await fetch('/api/chat', {
+      const response = await fetch('/api/agent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': '1001',
+        },
+        body: JSON.stringify({
+          threadId,
+          runId: crypto.randomUUID(),
+          state: {},
+          messages: [
+            {
+              id: userMessage.id,
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          tools: [],
+          context: [],
+          forwardedProps: {},
+        }),
       });
 
       if (!response.ok) {
@@ -338,6 +343,7 @@ export default function App() {
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
+      let runError: Error | null = null;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -353,7 +359,24 @@ export default function App() {
           try {
             const data = JSON.parse(line.slice(6));
 
-            if (data.content === '[DONE]') {
+            if (data.type === 'TEXT_MESSAGE_CONTENT') {
+              assistantContent += data.delta ?? '';
+              setMessages((prev) =>
+                prev.map((message) =>
+                  message.id === assistantMessageId
+                    ? { ...message, content: message.content + (data.delta ?? '') }
+                    : message,
+                ),
+              );
+              continue;
+            }
+
+            if (data.type === 'RUN_ERROR') {
+              runError = new Error(data.message ?? 'Agent run failed');
+              continue;
+            }
+
+            if (data.type === 'TEXT_MESSAGE_END' || data.type === 'RUN_FINISHED') {
               setMessages((prev) =>
                 prev.map((message) =>
                   message.id === assistantMessageId
@@ -361,21 +384,13 @@ export default function App() {
                     : message,
                 ),
               );
-              continue;
             }
-
-            setMessages((prev) =>
-              prev.map((message) =>
-                message.id === assistantMessageId
-                  ? { ...message, content: message.content + (data.content ?? '') }
-                  : message,
-              ),
-            );
           } catch (error) {
             console.error('Failed to parse SSE payload:', error);
           }
         }
       }
+      if (runError) throw runError;
     } catch (error) {
       console.error('Chat request failed:', error);
       setMessages((prev) =>
@@ -399,27 +414,27 @@ export default function App() {
         ),
       );
 
-      setSessions((prev) => {
-        const nextMessages = [
+      const liveSession: ConversationSession = {
+        id: threadId,
+        title: prompt.length > 14 ? `${prompt.slice(0, 14)}...` : prompt,
+        updatedAt: '刚刚',
+        summary: assistantContent.slice(0, 80) || '当前对话',
+        tag: '当前会话',
+        messages: cloneMessages([
+          ...messages,
           userMessage,
           {
             id: crypto.randomUUID(),
-            role: 'assistant' as const,
-            content: '本次会话已更新，可在最近会话中继续查看。',
+            role: 'assistant',
+            content: assistantContent,
           },
-        ];
-        const liveSession: ConversationSession = {
-          id: 'live-session',
-          title: prompt.length > 14 ? `${prompt.slice(0, 14)}...` : prompt,
-          updatedAt: '刚刚',
-          summary: '当前对话已同步到最近会话',
-          tag: '当前会话',
-          messages: cloneMessages([...messages, ...nextMessages]),
-        };
-        const withoutLive = prev.filter((item) => item.id !== 'live-session');
-        return [liveSession, ...withoutLive];
-      });
-      setSelectedSessionId('live-session');
+        ]),
+      };
+      setSessions((prev) => [
+        liveSession,
+        ...prev.filter((item) => item.id !== threadId),
+      ]);
+      setSelectedSessionId(threadId);
     }
   };
 
@@ -431,6 +446,7 @@ export default function App() {
   };
 
   const handleNewChat = () => {
+    setThreadId(crypto.randomUUID());
     setMessages(createInitialMessages());
     setInput('');
     setIsLoading(false);
@@ -438,6 +454,7 @@ export default function App() {
   };
 
   const restoreConversation = (session: ConversationSession) => {
+    setThreadId(session.id);
     setMessages(cloneMessages(session.messages));
     setActiveView('chat');
   };
@@ -564,26 +581,35 @@ export default function App() {
                 </div>
               </section>
 
-              <section className="panel recent-preview">
-                <div className="panel__header">
-                  <h2>{selectedSession.title}</h2>
-                  <p>{selectedSession.summary}</p>
-                </div>
+              {selectedSession ? (
+                <section className="panel recent-preview">
+                  <div className="panel__header">
+                    <h2>{selectedSession.title}</h2>
+                    <p>{selectedSession.summary}</p>
+                  </div>
 
-                <div className="recent-preview__messages">
-                  <ChatMessages messages={selectedSession.messages} />
-                </div>
+                  <div className="recent-preview__messages">
+                    <ChatMessages messages={selectedSession.messages} />
+                  </div>
 
-                <div className="panel__actions">
-                  <button
-                    type="button"
-                    className="solid-action"
-                    onClick={() => restoreConversation(selectedSession)}
-                  >
-                    恢复到当前对话
-                  </button>
-                </div>
-              </section>
+                  <div className="panel__actions">
+                    <button
+                      type="button"
+                      className="solid-action"
+                      onClick={() => restoreConversation(selectedSession)}
+                    >
+                      恢复到当前对话
+                    </button>
+                  </div>
+                </section>
+              ) : (
+                <section className="panel recent-preview">
+                  <div className="panel__header">
+                    <h2>暂无历史会话</h2>
+                    <p>完成一次咨询后，会话会自动保存到这里。</p>
+                  </div>
+                </section>
+              )}
             </div>
           )}
 

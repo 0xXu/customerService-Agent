@@ -12,4 +12,4 @@ COPY . .
 
 EXPOSE 8000
 
-CMD ["sh", "-c", ".venv/bin/python -m rag.vector_store && exec .venv/bin/python server.py"]
+CMD [".venv/bin/python", "server.py"]
