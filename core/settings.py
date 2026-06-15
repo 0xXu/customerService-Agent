@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     model_base_url: str = "https://token-plan-cn.xiaomimimo.com/v1"
     openai_api_key: str = ""
     model_temperature: float = 0.2
+    model_thinking: str = "disabled"
 
     database_url: str = "sqlite+aiosqlite:///./runtime/customer_service.db"
 

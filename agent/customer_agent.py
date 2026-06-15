@@ -38,7 +38,10 @@ def build_customer_agent(settings: Settings) -> Agent[CustomerAgentDeps, str]:
         deps_type=CustomerAgentDeps,
         output_type=str,
         instructions=load_system_prompts(),
-        model_settings={"temperature": settings.model_temperature},
+        model_settings={
+            "temperature": settings.model_temperature,
+            "extra_body": {"thinking": {"type": settings.model_thinking}},
+        },
         retries=2,
         tool_timeout=30,
     )
